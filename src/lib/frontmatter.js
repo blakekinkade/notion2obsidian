@@ -9,18 +9,56 @@ import { convertNotionCallouts } from "./callouts.js";
 // ============================================================================
 
 export function extractInlineMetadataFromLines(lines) {
-  const metadata = {};
+  const notionProperties = {};
+  const propertyLineIndices = new Set();
 
-  for (const line of lines) {
-    if (line.startsWith('Status:')) metadata.status = line.substring(7).trim();
-    if (line.startsWith('Owner:')) metadata.owner = line.substring(6).trim();
-    if (line.startsWith('Dates:')) metadata.dates = line.substring(6).trim();
-    if (line.startsWith('Priority:')) metadata.priority = line.substring(9).trim();
-    if (line.startsWith('Completion:')) metadata.completion = parseFloat(line.substring(11).trim());
-    if (line.startsWith('Summary:')) metadata.summary = line.substring(8).trim();
+  // Matches "Key Name (optional): value" — Notion database property lines
+  const propertyPattern = /^([A-Za-z][A-Za-z0-9 _()\\-]*?):\s+(.+)$/;
+
+  // Start scanning after the first H1 heading
+  let startIndex = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (/^#\s/.test(lines[i])) {
+      startIndex = i + 1;
+      break;
+    }
   }
 
-  return metadata;
+  let inPropertyBlock = false;
+
+  for (let i = startIndex; i < lines.length; i++) {
+    const line = lines[i];
+
+    if (line.trim() === '') {
+      if (!inPropertyBlock) continue; // skip blank lines before first property
+      else break; // blank line ends the property block
+    }
+
+    const match = line.match(propertyPattern);
+    if (match) {
+      inPropertyBlock = true;
+      const rawKey = match[1].trim();
+      const value = match[2].trim();
+
+      // Convert to YAML-safe key: remove backslashes/parens, lowercase, spaces to hyphens
+      const yamlKey = rawKey
+        .replace(/\\/g, '')
+        .replace(/[()]/g, '')
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+
+      if (yamlKey) {
+        notionProperties[yamlKey] = value;
+        propertyLineIndices.add(i);
+      }
+    } else {
+      break; // non-property non-empty line ends the block
+    }
+  }
+
+  return { metadata: notionProperties, propertyLineIndices };
 }
 
 export function getTagsFromPath(filePath, baseDir) {
@@ -116,13 +154,24 @@ export function generateValidFrontmatter(metadata, relativePath) {
   // Add banner image if provided
   if (metadata.banner) frontmatterData.banner = metadata.banner;
 
-  // Add inline metadata if found
+  // Add inline metadata if found (legacy specific fields)
   if (metadata.status) frontmatterData.status = metadata.status;
   if (metadata.owner) frontmatterData.owner = metadata.owner;
   if (metadata.dates) frontmatterData.dates = metadata.dates;
   if (metadata.priority) frontmatterData.priority = metadata.priority;
   if (metadata.completion !== undefined) frontmatterData.completion = metadata.completion;
   if (metadata.summary) frontmatterData.summary = metadata.summary;
+
+  // Add all other extracted Notion property fields not already handled
+  const knownKeys = new Set([
+    'title', 'tags', 'aliases', 'notionId', 'folder', 'banner',
+    'status', 'owner', 'dates', 'priority', 'completion', 'summary', 'published'
+  ]);
+  for (const [key, value] of Object.entries(metadata)) {
+    if (!knownKeys.has(key) && value !== undefined && value !== null && !frontmatterData[key]) {
+      frontmatterData[key] = value;
+    }
+  }
 
   // Always set published to false
   frontmatterData.published = false;
@@ -245,18 +294,23 @@ export async function processFileContent(filePath, metadata, fileMap, baseDir, d
 
   const lines = content.split('\n');
 
-  // Extract inline metadata from content
-  const inlineMetadata = extractInlineMetadataFromLines(lines.slice(0, 30));
-  Object.assign(metadata, inlineMetadata);
-
   // Check if file already has valid Obsidian frontmatter
   const hasFrontmatter = hasValidFrontmatter(content);
+
+  // Extract Notion property block (Key: Value lines after H1)
+  const { metadata: inlineMetadata, propertyLineIndices } = extractInlineMetadataFromLines(lines);
+  Object.assign(metadata, inlineMetadata);
 
   // Add folder path to metadata
   const relativePath = relative(baseDir, dirname(filePath));
   metadata.folder = relativePath !== '.' ? relativePath : undefined;
 
+  // Remove Notion property lines from content (only on initial conversion)
   let newContent = content;
+  if (propertyLineIndices.size > 0 && !hasFrontmatter) {
+    const filteredLines = lines.filter((_, i) => !propertyLineIndices.has(i));
+    newContent = filteredLines.join('\n').replace(/\n{3,}/g, '\n\n');
+  }
 
   // Convert Notion callouts to Obsidian callouts
   const { content: contentAfterCallouts, calloutsConverted } = convertNotionCallouts(newContent);
