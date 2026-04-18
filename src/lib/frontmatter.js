@@ -39,8 +39,24 @@ export function parseNotionDateValue(value) {
 
 export function stripNotionPageReferences(value) {
   // Remove Notion internal page URLs: "Page Name (https://www.notion.so/...)"
-  // Handles multiple references in the same value
-  return value.replace(/\s*\(https?:\/\/www\.notion\.so\/[^)]*\)/g, '').trim();
+  // Returns an array when multiple references are found, string otherwise
+  let count = 0;
+  const stripped = value.replace(/\s*\(https?:\/\/www\.notion\.so\/[^)]*\)/g, () => {
+    count++;
+    return '';
+  }).trim();
+
+  if (count > 1) {
+    return stripped.split(/,\s*/).map(s => s.trim()).filter(Boolean);
+  }
+
+  return stripped;
+}
+
+export function parseNotionBooleanValue(value) {
+  if (value === 'Yes') return true;
+  if (value === 'No') return false;
+  return value;
 }
 
 // ============================================================================
@@ -89,7 +105,10 @@ export function extractInlineMetadataFromLines(lines) {
         .replace(/^-|-$/g, '');
 
       if (yamlKey) {
-        notionProperties[yamlKey] = parseNotionDateValue(stripNotionPageReferences(value));
+        const stripped = stripNotionPageReferences(value);
+        notionProperties[yamlKey] = Array.isArray(stripped)
+          ? stripped
+          : parseNotionBooleanValue(parseNotionDateValue(stripped));
         propertyLineIndices.add(i);
       }
     } else {

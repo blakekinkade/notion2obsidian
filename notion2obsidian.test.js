@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { parseNotionDateValue, stripNotionPageReferences } from "./src/lib/frontmatter.js";
+import { parseNotionDateValue, stripNotionPageReferences, parseNotionBooleanValue } from "./src/lib/frontmatter.js";
 
 // Test utility functions by extracting them inline for testing
 // In a production setup, these would be exported from notion2obsidian.js
@@ -934,9 +934,9 @@ describe("Notion Page Reference Stripping", () => {
       .toBe("health&Fitness/body");
   });
 
-  test("should strip multiple notion page references", () => {
+  test("should return array for multiple notion page references", () => {
     expect(stripNotionPageReferences("hobbies (https://www.notion.so/hobbies-abc123?pvs=21), fitness (https://www.notion.so/fitness-def456?pvs=21)"))
-      .toBe("hobbies, fitness");
+      .toEqual(["hobbies", "fitness"]);
   });
 
   test("should leave non-notion URLs unchanged", () => {
@@ -947,5 +947,21 @@ describe("Notion Page Reference Stripping", () => {
   test("should leave plain values unchanged", () => {
     expect(stripNotionPageReferences("Yes")).toBe("Yes");
     expect(stripNotionPageReferences("N-20200618")).toBe("N-20200618");
+  });
+});
+
+describe("Notion Boolean Parsing", () => {
+  test("should convert Yes to true", () => {
+    expect(parseNotionBooleanValue("Yes")).toBe(true);
+  });
+
+  test("should convert No to false", () => {
+    expect(parseNotionBooleanValue("No")).toBe(false);
+  });
+
+  test("should leave non-boolean values unchanged", () => {
+    expect(parseNotionBooleanValue("N-20200618")).toBe("N-20200618");
+    expect(parseNotionBooleanValue("2020-06-18")).toBe("2020-06-18");
+    expect(parseNotionBooleanValue("hobbies")).toBe("hobbies");
   });
 });
