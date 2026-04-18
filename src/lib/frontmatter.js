@@ -37,6 +37,12 @@ export function parseNotionDateValue(value) {
   return `${year}-${pad(month)}-${pad(day)}`;
 }
 
+export function stripNotionPageReferences(value) {
+  // Remove Notion internal page URLs: "Page Name (https://www.notion.so/...)"
+  // Handles multiple references in the same value
+  return value.replace(/\s*\(https?:\/\/www\.notion\.so\/[^)]*\)/g, '').trim();
+}
+
 // ============================================================================
 // Metadata Extraction
 // ============================================================================
@@ -83,7 +89,7 @@ export function extractInlineMetadataFromLines(lines) {
         .replace(/^-|-$/g, '');
 
       if (yamlKey) {
-        notionProperties[yamlKey] = parseNotionDateValue(value);
+        notionProperties[yamlKey] = parseNotionDateValue(stripNotionPageReferences(value));
         propertyLineIndices.add(i);
       }
     } else {

@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { parseNotionDateValue } from "./src/lib/frontmatter.js";
+import { parseNotionDateValue, stripNotionPageReferences } from "./src/lib/frontmatter.js";
 
 // Test utility functions by extracting them inline for testing
 // In a production setup, these would be exported from notion2obsidian.js
@@ -925,5 +925,27 @@ describe("Notion Date Parsing", () => {
     expect(parseNotionDateValue("Yes")).toBe("Yes");
     expect(parseNotionDateValue("N-20200618")).toBe("N-20200618");
     expect(parseNotionDateValue("hobbies (https://notion.so/abc)")).toBe("hobbies (https://notion.so/abc)");
+  });
+});
+
+describe("Notion Page Reference Stripping", () => {
+  test("should strip single notion page reference", () => {
+    expect(stripNotionPageReferences("health&Fitness/body (https://www.notion.so/health-Fitness-body-2283755dbb6f81d18187faabcb86b796?pvs=21)"))
+      .toBe("health&Fitness/body");
+  });
+
+  test("should strip multiple notion page references", () => {
+    expect(stripNotionPageReferences("hobbies (https://www.notion.so/hobbies-abc123?pvs=21), fitness (https://www.notion.so/fitness-def456?pvs=21)"))
+      .toBe("hobbies, fitness");
+  });
+
+  test("should leave non-notion URLs unchanged", () => {
+    expect(stripNotionPageReferences("hobbies (https://example.com/something)"))
+      .toBe("hobbies (https://example.com/something)");
+  });
+
+  test("should leave plain values unchanged", () => {
+    expect(stripNotionPageReferences("Yes")).toBe("Yes");
+    expect(stripNotionPageReferences("N-20200618")).toBe("N-20200618");
   });
 });
