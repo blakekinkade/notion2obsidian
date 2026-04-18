@@ -235,11 +235,7 @@ export function generateValidFrontmatter(metadata, relativePath) {
   frontmatterData.published = false;
 
   try {
-    // Use gray-matter to generate properly formatted YAML
-    // Force quotes to ensure proper parsing of special characters
-    const result = matter.stringify('', frontmatterData, {
-      forceQuotes: true
-    });
+    const result = matter.stringify('', frontmatterData);
 
     // Extract just the frontmatter part (remove empty content)
     const frontmatterMatch = result.match(/^---\n([\s\S]*?)\n---\n$/);
