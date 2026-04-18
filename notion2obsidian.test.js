@@ -1,4 +1,5 @@
 import { describe, test, expect } from "bun:test";
+import { parseNotionDateValue } from "./src/lib/frontmatter.js";
 
 // Test utility functions by extracting them inline for testing
 // In a production setup, these would be exported from notion2obsidian.js
@@ -896,5 +897,33 @@ describe("Database Folder Organization", () => {
     expect(getDataFolderPath("Tasks")).toBe("Tasks/_data");
     expect(getDataFolderPath("Odara - pages")).toBe("Odara - pages/_data");
     expect(getDataFolderPath("Projects")).toBe("Projects/_data");
+  });
+});
+
+describe("Notion Date Parsing", () => {
+  test("should convert date-only to YYYY-MM-DD", () => {
+    expect(parseNotionDateValue("August 21, 2018")).toBe("2018-08-21");
+    expect(parseNotionDateValue("January 1, 2000")).toBe("2000-01-01");
+    expect(parseNotionDateValue("December 31, 2023")).toBe("2023-12-31");
+  });
+
+  test("should convert AM datetime to YYYY-MM-DDTHH:mm:ss", () => {
+    expect(parseNotionDateValue("June 18, 2020 12:28 AM")).toBe("2020-06-18T00:28:00");
+    expect(parseNotionDateValue("March 5, 2021 6:00 AM")).toBe("2021-03-05T06:00:00");
+  });
+
+  test("should convert PM datetime to YYYY-MM-DDTHH:mm:ss", () => {
+    expect(parseNotionDateValue("August 3, 2025 9:33 PM")).toBe("2025-08-03T21:33:00");
+    expect(parseNotionDateValue("July 4, 2022 12:00 PM")).toBe("2022-07-04T12:00:00");
+  });
+
+  test("should handle 12 AM as midnight (00:xx)", () => {
+    expect(parseNotionDateValue("October 10, 2020 12:00 AM")).toBe("2020-10-10T00:00:00");
+  });
+
+  test("should return non-date values unchanged", () => {
+    expect(parseNotionDateValue("Yes")).toBe("Yes");
+    expect(parseNotionDateValue("N-20200618")).toBe("N-20200618");
+    expect(parseNotionDateValue("hobbies (https://notion.so/abc)")).toBe("hobbies (https://notion.so/abc)");
   });
 });

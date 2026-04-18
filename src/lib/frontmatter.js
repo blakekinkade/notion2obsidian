@@ -5,6 +5,39 @@ import { PATTERNS, cleanName, cleanDirName } from "./utils.js";
 import { convertNotionCallouts } from "./callouts.js";
 
 // ============================================================================
+// Date Parsing
+// ============================================================================
+
+const MONTH_MAP = {
+  January: 1, February: 2, March: 3, April: 4, May: 5, June: 6,
+  July: 7, August: 8, September: 9, October: 10, November: 11, December: 12
+};
+
+// Matches "June 18, 2020" or "June 18, 2020 12:28 AM"
+const NOTION_DATE_PATTERN = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s+(\d{4})(?:\s+(\d{1,2}):(\d{2})\s+(AM|PM))?$/;
+
+export function parseNotionDateValue(value) {
+  const match = value.match(NOTION_DATE_PATTERN);
+  if (!match) return value;
+
+  const month = MONTH_MAP[match[1]];
+  const day = parseInt(match[2], 10);
+  const year = parseInt(match[3], 10);
+  const pad = n => String(n).padStart(2, '0');
+
+  if (match[4] !== undefined) {
+    let hours = parseInt(match[4], 10);
+    const minutes = parseInt(match[5], 10);
+    const ampm = match[6];
+    if (ampm === 'AM' && hours === 12) hours = 0;
+    if (ampm === 'PM' && hours !== 12) hours += 12;
+    return `${year}-${pad(month)}-${pad(day)}T${pad(hours)}:${pad(minutes)}:00`;
+  }
+
+  return `${year}-${pad(month)}-${pad(day)}`;
+}
+
+// ============================================================================
 // Metadata Extraction
 // ============================================================================
 
@@ -50,7 +83,7 @@ export function extractInlineMetadataFromLines(lines) {
         .replace(/^-|-$/g, '');
 
       if (yamlKey) {
-        notionProperties[yamlKey] = value;
+        notionProperties[yamlKey] = parseNotionDateValue(value);
         propertyLineIndices.add(i);
       }
     } else {
