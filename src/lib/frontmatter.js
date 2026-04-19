@@ -83,8 +83,8 @@ export function extractInlineMetadataFromLines(lines) {
   const notionProperties = {};
   const propertyLineIndices = new Set();
 
-  // Matches "Key Name (optional): value" — Notion database property lines
-  const propertyPattern = /^([A-Za-z][A-Za-z0-9 _()\\-]*?):\s+(.+)$/;
+  // Matches "Key Name (any chars except colon): value" — Notion database property lines
+  const propertyPattern = /^([A-Za-z][^:\n]*?):\s+(.+)$/;
 
   // Start scanning after the first H1 heading
   let startIndex = 0;
@@ -111,12 +111,11 @@ export function extractInlineMetadataFromLines(lines) {
       const rawKey = match[1].trim();
       const value = match[2].trim();
 
-      // Convert to YAML-safe key: remove backslashes/parens, lowercase, spaces to hyphens
+      // Convert to YAML-safe key: lowercase, spaces to hyphens, strip non-alphanumeric
       let yamlKey = rawKey
-        .replace(/\\/g, '')
-        .replace(/[()]/g, '')
         .toLowerCase()
         .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9-_]/g, '')
         .replace(/-+/g, '-')
         .replace(/^-|-$/g, '');
 
