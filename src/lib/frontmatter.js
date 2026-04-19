@@ -96,13 +96,16 @@ export function extractInlineMetadataFromLines(lines) {
       const value = match[2].trim();
 
       // Convert to YAML-safe key: remove backslashes/parens, lowercase, spaces to hyphens
-      const yamlKey = rawKey
+      let yamlKey = rawKey
         .replace(/\\/g, '')
         .replace(/[()]/g, '')
         .toLowerCase()
         .replace(/\s+/g, '-')
         .replace(/-+/g, '-')
         .replace(/^-|-$/g, '');
+
+      // Normalize Notion's "Tag" field to Obsidian's "tags"
+      if (yamlKey === 'tag') yamlKey = 'tags';
 
       if (yamlKey) {
         const stripped = stripNotionPageReferences(value);
