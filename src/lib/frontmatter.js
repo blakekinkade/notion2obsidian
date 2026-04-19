@@ -72,7 +72,7 @@ export const FIELD_TYPES = {
   project: 'link',
   source: 'link',
   author: 'link',
-  snipd: 'link
+  snipd: 'link'
 };
 
 // ============================================================================
