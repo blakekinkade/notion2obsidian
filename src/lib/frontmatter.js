@@ -139,6 +139,15 @@ export function extractInlineMetadataFromLines(lines) {
         } else {
           notionProperties[yamlKey] = parseNotionBooleanValue(parseNotionDateValue(stripped));
         }
+
+        // Normalize tag values: replace & with and
+        if (yamlKey === 'tags') {
+          const val = notionProperties[yamlKey];
+          notionProperties[yamlKey] = Array.isArray(val)
+            ? val.map(v => v.replace(/&/g, 'and'))
+            : String(val).replace(/&/g, 'and');
+        }
+
         propertyLineIndices.add(i);
       }
     } else {
