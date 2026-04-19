@@ -69,6 +69,10 @@ export function parseNotionBooleanValue(value) {
 export const FIELD_TYPES = {
   source:    'link',
   'area-ub': 'link',
+  project: 'link',
+  source: 'link',
+  author: 'link',
+  snipd: 'link
 };
 
 // ============================================================================
