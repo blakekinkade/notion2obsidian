@@ -181,11 +181,25 @@ export function parseFrontmatter(content) {
   }
 }
 
+function serializeFrontmatter(data) {
+  const lines = ['---'];
+  for (const [key, value] of Object.entries(data)) {
+    if (Array.isArray(value)) {
+      lines.push(`${key}:`);
+      value.forEach(item => lines.push(`  - ${item}`));
+    } else {
+      lines.push(`${key}: ${value}`);
+    }
+  }
+  lines.push('---');
+  return lines.join('\n');
+}
+
 /**
- * Generates valid YAML frontmatter using gray-matter
+ * Generates YAML frontmatter without unnecessary quoting (Obsidian-compatible)
  * @param {Object} metadata - The metadata object
  * @param {string} relativePath - Relative path for folder field
- * @returns {string} - Valid YAML frontmatter string
+ * @returns {string} - YAML frontmatter string
  */
 export function generateValidFrontmatter(metadata, relativePath) {
   // Build frontmatter data object
@@ -234,22 +248,7 @@ export function generateValidFrontmatter(metadata, relativePath) {
   // Always set published to false
   frontmatterData.published = false;
 
-  try {
-    const result = matter.stringify('', frontmatterData);
-
-    // Extract just the frontmatter part (remove empty content)
-    const frontmatterMatch = result.match(/^---\n([\s\S]*?)\n---\n$/);
-    if (frontmatterMatch) {
-      return `---\n${frontmatterMatch[1]}\n---`;
-    }
-
-    // Fallback: generate manually if matter.stringify doesn't work as expected
-    return generateFallbackFrontmatter(frontmatterData);
-
-  } catch (error) {
-    console.warn(chalk.yellow(`Warning: Failed to generate frontmatter with gray-matter: ${error.message}`));
-    return generateFallbackFrontmatter(frontmatterData);
-  }
+  return serializeFrontmatter(frontmatterData);
 }
 
 /**
