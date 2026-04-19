@@ -60,6 +60,18 @@ export function parseNotionBooleanValue(value) {
 }
 
 // ============================================================================
+// Field Type Configuration
+// ============================================================================
+
+// Add field names here to control how their values are serialized.
+// 'link'  → wraps value(s) in [[ ]] as Obsidian wiki links
+// 'array' → always serializes as a YAML list, even for a single value
+export const FIELD_TYPES = {
+  source:    'link',
+  'area-ub': 'link',
+};
+
+// ============================================================================
 // Metadata Extraction
 // ============================================================================
 
@@ -109,9 +121,20 @@ export function extractInlineMetadataFromLines(lines) {
 
       if (yamlKey) {
         const stripped = stripNotionPageReferences(value);
-        notionProperties[yamlKey] = Array.isArray(stripped)
-          ? stripped
-          : parseNotionBooleanValue(parseNotionDateValue(stripped));
+        const fieldType = FIELD_TYPES[yamlKey];
+
+        if (fieldType === 'link') {
+          // Wrap each value as an Obsidian wiki link
+          notionProperties[yamlKey] = Array.isArray(stripped)
+            ? stripped.map(v => `[[${v}]]`)
+            : `[[${stripped}]]`;
+        } else if (fieldType === 'array') {
+          notionProperties[yamlKey] = Array.isArray(stripped) ? stripped : [stripped];
+        } else if (Array.isArray(stripped)) {
+          notionProperties[yamlKey] = stripped;
+        } else {
+          notionProperties[yamlKey] = parseNotionBooleanValue(parseNotionDateValue(stripped));
+        }
         propertyLineIndices.add(i);
       }
     } else {
@@ -184,14 +207,21 @@ export function parseFrontmatter(content) {
   }
 }
 
+function serializeScalar(value) {
+  const str = String(value);
+  // [[wiki links]] must be quoted — [[ is a special sequence in YAML
+  if (str.startsWith('[[')) return `"${str}"`;
+  return str;
+}
+
 function serializeFrontmatter(data) {
   const lines = ['---'];
   for (const [key, value] of Object.entries(data)) {
     if (Array.isArray(value)) {
       lines.push(`${key}:`);
-      value.forEach(item => lines.push(`  - ${item}`));
+      value.forEach(item => lines.push(`  - ${serializeScalar(item)}`));
     } else {
-      lines.push(`${key}: ${value}`);
+      lines.push(`${key}: ${serializeScalar(value)}`);
     }
   }
   lines.push('---');
