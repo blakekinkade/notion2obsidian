@@ -430,11 +430,6 @@ export async function processFileContent(filePath, metadata, fileMap, baseDir, d
   if (!hasFrontmatter) {
     const frontmatter = generateValidFrontmatter(metadata, relativePath);
 
-    // Validate the generated frontmatter
-    if (!validateFrontmatter(frontmatter)) {
-      console.warn(chalk.yellow(`Warning: Generated invalid frontmatter for ${filePath}`));
-    }
-
     // Ensure content starts with frontmatter and has proper line endings
     newContent = frontmatter + '\n\n' + newContent.replace(/^\uFEFF/, ''); // Remove BOM if present
   }
