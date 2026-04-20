@@ -221,8 +221,20 @@ export function parseFrontmatter(content) {
 
 function serializeScalar(value) {
   const str = String(value);
-  // [[wiki links]] must be quoted — [[ is a special sequence in YAML
-  if (str.startsWith('[[')) return `"${str}"`;
+  // Quote if the value starts with characters that are special in YAML
+  const needsQuoting =
+    str.startsWith('[') ||  // flow sequence — e.g. [EXAMPLE]
+    str.startsWith('{') ||  // flow mapping
+    str.startsWith("'") ||  // single-quoted scalar
+    str.startsWith('"') ||  // double-quoted scalar
+    str.startsWith('`') ||
+    str.startsWith('>') ||  // block scalar
+    str.startsWith('|') ||  // block scalar
+    str.startsWith('!') ||  // tag
+    str.startsWith('&') ||  // anchor
+    str.startsWith('*') ||  // alias
+    str.startsWith('%');    // directive
+  if (needsQuoting) return `"${str.replace(/"/g, '\\"')}"`;
   return str;
 }
 
