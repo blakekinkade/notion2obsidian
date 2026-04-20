@@ -6,6 +6,19 @@ import { unzipSync } from "fflate";
 import chalk from "chalk";
 import { shortenFilename } from "./utils.js";
 
+// Fixes filenames where UTF-8 bytes were decoded as Latin-1 (common with emoji)
+function fixFilenameEncoding(name) {
+  if (!/[\x80-\xFF]/.test(name)) return name; // fast path: already ASCII
+  try {
+    const bytes = new Uint8Array(name.length);
+    for (let i = 0; i < name.length; i++) bytes[i] = name.charCodeAt(i) & 0xFF;
+    const decoded = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    return decoded;
+  } catch {
+    return name; // not valid UTF-8 — leave as-is
+  }
+}
+
 // ============================================================================
 // Zip Extraction
 // ============================================================================
@@ -92,7 +105,8 @@ export async function extractZipToSameDirectory(zipPath, options = {}) {
     let fileCount = 0;
     const nestedZips = [];
 
-    for (const [filePath, content] of selectedFiles) {
+    for (const [rawFilePath, content] of selectedFiles) {
+      const filePath = rawFilePath.split('/').map(fixFilenameEncoding).join('/');
       const fullPath = join(extractDir, filePath);
 
       // Create directory structure
