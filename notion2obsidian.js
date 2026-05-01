@@ -925,6 +925,120 @@ async function main() {
 
   spinner.succeed(`Step 5/5: Normalized ${normalizedImages} images and ${updatedReferences} references`);
 
+  // Step 5.5: Consolidate all attachments into a single _attachments/ folder
+  {
+    const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.ico', '.avif', '.tiff', '.tif']);
+    const ATTACH_EXTS = new Set([...IMAGE_EXTS, '.pdf', '.mp4', '.mp3', '.mov', '.avi', '.mkv', '.wav', '.m4a', '.zip', '.xlsx', '.docx', '.pptx', '.key', '.numbers', '.pages']);
+    const attachmentsDir = join(targetDir, '_attachments');
+    const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // Build map: oldAbsPath → newFilenameInAttachments
+    const attachMoveMap = new Map();
+    const usedAttachNames = new Set();
+
+    const attachScanGlob = new Glob('**/*');
+    for (const relFile of attachScanGlob.scanSync(targetDir)) {
+      if (relFile.startsWith('_attachments/')) continue;
+      const ext = extname(relFile).toLowerCase();
+      if (!ATTACH_EXTS.has(ext)) continue;
+
+      const filePath = join(targetDir, relFile);
+      const fileDir = dirname(filePath);
+      const relDir = relative(targetDir, fileDir);
+      const fileName = basename(filePath);
+
+      // Prefix with immediate parent folder name when not at vault root
+      let candidateName;
+      if (!relDir || relDir === '.') {
+        candidateName = fileName;
+      } else {
+        const folderPrefix = basename(fileDir)
+          .replace(/\s+/g, '-')
+          .replace(/[^a-zA-Z0-9_.-]/g, '-')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '')
+          .toLowerCase();
+        candidateName = `${folderPrefix}-${fileName}`;
+      }
+
+      // Resolve name collisions
+      const nameBase = basename(candidateName, ext);
+      let finalName = candidateName;
+      let counter = 1;
+      while (usedAttachNames.has(finalName)) {
+        finalName = `${nameBase}-${counter}${ext}`;
+        counter++;
+      }
+      usedAttachNames.add(finalName);
+      attachMoveMap.set(filePath, finalName);
+    }
+
+    if (attachMoveMap.size > 0) {
+      spinner.start(`Step 5.5: Consolidating ${attachMoveMap.size} attachments into _attachments/...`);
+      await mkdir(attachmentsDir, { recursive: true });
+
+      // Move all attachment files
+      for (const [oldPath, newName] of attachMoveMap) {
+        await rename(oldPath, join(attachmentsDir, newName));
+      }
+
+      // Update all references in .md files
+      const mdFilesForAttach = Array.from(new Glob('**/*.md').scanSync(targetDir));
+      for (const relMd of mdFilesForAttach) {
+        const mdPath = join(targetDir, relMd);
+        let content = await Bun.file(mdPath).text();
+        let modified = false;
+
+        for (const [oldPath, newName] of attachMoveMap) {
+          const oldFileName = basename(oldPath);
+          const oldEncoded = encodeURIComponent(oldFileName);
+          const fp = `(?:${escRe(oldFileName)}|${escRe(oldEncoded)})`;
+          const newRef = `_attachments/${newName}`;
+          const isImage = IMAGE_EXTS.has(extname(oldFileName).toLowerCase());
+
+          // Wiki embed: ![[path/file]] or ![[file]]
+          const wikiEmbedRe = new RegExp(`!\\[\\[(?:[^\\]]*?/)?${fp}\\]\\]`, 'g');
+          const r1 = content.replace(wikiEmbedRe, `![[${newRef}]]`);
+          if (r1 !== content) { content = r1; modified = true; }
+
+          // Markdown image: ![alt](path/file) → ![[_attachments/file]]
+          const mdImageRe = new RegExp(`!\\[[^\\]]*\\]\\((?:[^)]*?/)?${fp}\\)`, 'g');
+          const r2 = content.replace(mdImageRe, `![[${newRef}]]`);
+          if (r2 !== content) { content = r2; modified = true; }
+
+          // Markdown link (non-image): [text](path/file) → [[_attachments/file]]
+          if (!isImage) {
+            const mdLinkRe = new RegExp(`(?<!!)\\[[^\\]]*\\]\\((?:[^)]*?/)?${fp}\\)`, 'g');
+            const r3 = content.replace(mdLinkRe, `[[${newRef}]]`);
+            if (r3 !== content) { content = r3; modified = true; }
+          }
+        }
+
+        if (modified) await Bun.write(mdPath, content);
+      }
+
+      // Remove directories that are now completely empty (deepest first)
+      const emptyDirGlob = new Glob('**/', { onlyFiles: false });
+      const dirsToCheck = [];
+      for (const relDir of emptyDirGlob.scanSync(targetDir)) {
+        if (!relDir.startsWith('_attachments')) {
+          dirsToCheck.push(join(targetDir, relDir));
+        }
+      }
+      dirsToCheck.sort((a, b) => b.split(sep).length - a.split(sep).length);
+      let removedDirs = 0;
+      for (const dir of dirsToCheck) {
+        try {
+          const entries = await readdir(dir);
+          if (entries.length === 0) { await rm(dir); removedDirs++; }
+        } catch {}
+      }
+
+      const removedMsg = removedDirs > 0 ? `, removed ${removedDirs} empty folders` : '';
+      spinner.succeed(`Step 5.5: Moved ${attachMoveMap.size} attachments to _attachments/${removedMsg}`);
+    }
+  }
+
   // Step 6: Process CSV databases if enabled
   if (config.processCsv) {
     console.log(chalk.green(config.dataviewMode ?
