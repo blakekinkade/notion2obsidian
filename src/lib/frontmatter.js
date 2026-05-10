@@ -219,7 +219,7 @@ export function parseFrontmatter(content) {
   }
 }
 
-function serializeScalar(value) {
+export function serializeScalar(value) {
   const str = String(value);
   // Quote if the value starts with characters that are special in YAML
   const needsQuoting =
@@ -238,7 +238,7 @@ function serializeScalar(value) {
   return str;
 }
 
-function serializeFrontmatter(data) {
+export function serializeFrontmatter(data) {
   const lines = ['---'];
   for (const [key, value] of Object.entries(data)) {
     if (Array.isArray(value)) {
@@ -415,9 +415,9 @@ export async function processFileContent(filePath, metadata, fileMap, baseDir, d
   const relativePath = relative(baseDir, dirname(filePath));
   metadata.folder = relativePath !== '.' ? relativePath : undefined;
 
-  // Remove Notion property lines from content (only on initial conversion)
+  // Always remove Notion property lines from the body
   let newContent = content;
-  if (propertyLineIndices.size > 0 && !hasFrontmatter) {
+  if (propertyLineIndices.size > 0) {
     const filteredLines = lines.filter((_, i) => !propertyLineIndices.has(i));
     newContent = filteredLines.join('\n').replace(/\n{3,}/g, '\n\n');
   }
@@ -426,12 +426,20 @@ export async function processFileContent(filePath, metadata, fileMap, baseDir, d
   const { content: contentAfterCallouts, calloutsConverted } = convertNotionCallouts(newContent);
   newContent = contentAfterCallouts;
 
-  // Add frontmatter if it doesn't exist
   if (!hasFrontmatter) {
+    // Fresh file: generate full frontmatter
     const frontmatter = generateValidFrontmatter(metadata, relativePath);
-
-    // Ensure content starts with frontmatter and has proper line endings
-    newContent = frontmatter + '\n\n' + newContent.replace(/^\uFEFF/, ''); // Remove BOM if present
+    newContent = frontmatter + '\n\n' + newContent.replace(/^\uFEFF/, '');
+  } else if (propertyLineIndices.size > 0) {
+    // File already has frontmatter but had inline properties in the body \u2014 merge them in
+    const { data: existingData } = parseFrontmatter(newContent);
+    for (const [key, value] of Object.entries(inlineMetadata)) {
+      if (!(key in existingData)) {
+        existingData[key] = value;
+      }
+    }
+    const newFm = serializeFrontmatter(existingData);
+    newContent = newContent.replace(/^\uFEFF?---\n[\s\S]*?\n---\n/, newFm + '\n');
   }
 
   // Convert markdown links to wiki links and count them
