@@ -233,7 +233,8 @@ export function serializeScalar(value) {
     str.startsWith('!') ||  // tag
     str.startsWith('&') ||  // anchor
     str.startsWith('*') ||  // alias
-    str.startsWith('%');    // directive
+    str.startsWith('%') ||  // directive
+    str.startsWith('#');    // YAML comment indicator
   if (needsQuoting) return `"${str.replace(/"/g, '\\"')}"`;
   return str;
 }
