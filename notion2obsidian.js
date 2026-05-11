@@ -851,24 +851,28 @@ async function main() {
 
         for (const [oldPath, newName] of attachMoveMap) {
           const oldFileName = basename(oldPath);
-          const oldRelPath = relative(targetDir, oldPath); // e.g. "Note A 123/image.png"
-          const oldEncoded = oldRelPath.split('/').map(encodeURIComponent).join('/');
-          // Match the specific relative path (encoded or not) to avoid cross-note collisions
-          const fp = `(?:${escRe(oldRelPath)}|${escRe(oldEncoded)})`;
+          const parentFolder = basename(dirname(oldPath));
           const newRef = `_attachments/${newName}`;
           const isImage = IMAGE_EXTS.has(extname(oldFileName).toLowerCase());
 
-          // Wiki embed: ![[path/file]] or ![[file]]
+          // The reference in .md files is relative to the .md file's location,
+          // so it's always "ParentFolder/filename" regardless of nesting depth.
+          // Match both decoded (spaces) and URL-encoded (%20) variants.
+          const folderFile = `${parentFolder}/${oldFileName}`;
+          const folderFileEncoded = `${encodeURIComponent(parentFolder)}/${encodeURIComponent(oldFileName)}`;
+          const fp = `(?:${escRe(folderFile)}|${escRe(folderFileEncoded)})`;
+
+          // Wiki embed: ![[ParentFolder/file]]
           const wikiEmbedRe = new RegExp(`!\\[\\[${fp}\\]\\]`, 'g');
           const r1 = content.replace(wikiEmbedRe, `![[${newRef}]]`);
           if (r1 !== content) { content = r1; modified = true; }
 
-          // Markdown image: ![alt](path/file) → ![[_attachments/file]]
+          // Markdown image: ![alt](ParentFolder/file) → ![[_attachments/file]]
           const mdImageRe = new RegExp(`!\\[[^\\]]*\\]\\(${fp}\\)`, 'g');
           const r2 = content.replace(mdImageRe, `![[${newRef}]]`);
           if (r2 !== content) { content = r2; modified = true; }
 
-          // Markdown link (non-image): [text](path/file) → [[_attachments/file]]
+          // Markdown link (non-image): [text](ParentFolder/file) → [[_attachments/file]]
           if (!isImage) {
             const mdLinkRe = new RegExp(`(?<!!)\\[[^\\]]*\\]\\(${fp}\\)`, 'g');
             const r3 = content.replace(mdLinkRe, `[[${newRef}]]`);
