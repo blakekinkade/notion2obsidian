@@ -485,139 +485,8 @@ async function main() {
 
   spinner.succeed(`Step 1/5: Processed ${stats.processedFiles} files, converted ${stats.totalLinks} links`);
 
-  // Step 2: Organize attachments (before renaming, while names still match!)
-  spinner.start('Step 2/5: Organizing files with attachments...');
-
-  let movedFiles = 0;
-  const filesMovedIntoFolders = new Set(); // Track which files were moved
-
-  for (const file of fileMigrationMap) {
-    const mdFile = file.oldPath; // Use original path (still has Notion ID)
-    const mdFileBase = basename(mdFile, '.md');
-    const mdFileDir = dirname(mdFile);
-
-    try {
-      // Find a matching attachment folder: Notion may export it as an exact match,
-      // a truncated prefix (long titles get cut), or without the Notion ID suffix.
-      let attachmentFolder = null;
-      const siblings = await readdir(mdFileDir).catch(() => []);
-      for (const sibling of siblings) {
-        const siblingPath = join(mdFileDir, sibling);
-        const siblingStats = await stat(siblingPath).catch(() => null);
-        if (!siblingStats || !siblingStats.isDirectory()) continue;
-        // Match if the md basename starts with the folder name (handles truncation and ID suffix)
-        if (mdFileBase === sibling || mdFileBase.startsWith(sibling + ' ')) {
-          attachmentFolder = siblingPath;
-          break;
-        }
-      }
-
-      if (attachmentFolder) {
-        // Move the .md file into its attachment folder AND rename it (remove Notion ID)
-        const newMdPath = join(attachmentFolder, file.newName);
-        await rename(mdFile, newMdPath);
-        movedFiles++;
-        if (file.needsRename) {
-          stats.renamedFiles++; // Count file renames
-        }
-
-        // Update file paths in the migration map
-        file.oldPath = newMdPath;
-        file.newPath = newMdPath; // Already at final name
-
-        // Add the NEW path (after moving) to the set
-        filesMovedIntoFolders.add(newMdPath);
-
-        // Normalize and rename image files in the attachment folder
-        const filesInFolder = await readdir(attachmentFolder);
-
-        // Common image extensions
-        const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'];
-
-        // Build map of normalized name → original name for images
-        const imageMap = new Map();
-
-        for (const fileName of filesInFolder) {
-          const ext = extname(fileName).toLowerCase();
-          if (imageExtensions.includes(ext)) {
-            // Normalize: spaces → hyphens, lowercase
-            const nameWithoutExt = basename(fileName, extname(fileName));
-            const normalizedName = nameWithoutExt
-              .replace(/\s+/g, '-')
-              .toLowerCase() + ext;
-
-            // Only rename if needed
-            if (fileName !== normalizedName) {
-              const originalPath = join(attachmentFolder, fileName);
-              const normalizedPath = join(attachmentFolder, normalizedName);
-
-              // Check if normalized path already exists
-              if (await stat(normalizedPath).catch(() => false)) {
-                // Add counter to avoid collision
-                let counter = 1;
-                let altName = `${basename(normalizedName, ext)}-${counter}${ext}`;
-                while (await stat(join(attachmentFolder, altName)).catch(() => false)) {
-                  counter++;
-                  altName = `${basename(normalizedName, ext)}-${counter}${ext}`;
-                }
-                await rename(originalPath, join(attachmentFolder, altName));
-                imageMap.set(fileName, altName);
-              } else {
-                await rename(originalPath, normalizedPath);
-                imageMap.set(fileName, normalizedName);
-              }
-            }
-          }
-        }
-
-        // Update image references in the MD file
-        let content = await Bun.file(newMdPath).text();
-
-        // Replace image references
-        content = content.replace(
-          /(!?\[[^\]]*\]\()([^)]+)(\))/g,
-          (match, prefix, path, suffix) => {
-            // Skip external URLs
-            if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('mailto:')) {
-              return match;
-            }
-            // Skip wiki links
-            if (match.startsWith('[[')) {
-              return match;
-            }
-
-            // Decode URL-encoded paths and get just the filename
-            const decodedPath = decodeURIComponent(path);
-            const fileName = basename(decodedPath);
-
-            // Check if this image was renamed
-            if (imageMap.has(fileName)) {
-              return `${prefix}${imageMap.get(fileName)}${suffix}`;
-            }
-
-            // Otherwise, check if it's an image in our folder - just use the filename
-            const ext = extname(fileName).toLowerCase();
-            if (imageExtensions.includes(ext)) {
-              // Normalize the filename reference
-              const nameWithoutExt = basename(fileName, extname(fileName));
-              const normalizedFileName = nameWithoutExt
-                .replace(/\s+/g, '-')
-                .toLowerCase() + ext;
-              return `${prefix}${normalizedFileName}${suffix}`;
-            }
-
-            return match;
-          }
-        );
-
-        await Bun.write(newMdPath, content);
-      }
-    } catch (err) {
-      stats.addNamingConflict(file.oldPath, `Error organizing attachments: ${err.message}`);
-    }
-  }
-
-  spinner.succeed(`Step 2/5: Moved ${movedFiles} files into their attachment folders`);
+  // Step 2: (attachments are handled in Step 5.5)
+  spinner.succeed(`Step 2/5: Attachments will be consolidated in Step 5.5`);
 
   // Step 3: Rename directories (deepest first to avoid path conflicts)
   spinner.start('Step 3/5: Renaming directories...');
@@ -654,44 +523,24 @@ async function main() {
 
   spinner.succeed(`Step 3/5: Renamed ${stats.renamedDirs} directories`);
 
-  // Update file paths in fileMigrationMap and filesMovedIntoFolders to reflect renamed directories
-  // Process directories from deepest to shallowest to handle nested renames correctly
-  const updatedMovedFiles = new Set();
+  // Update file paths in fileMigrationMap to reflect renamed directories
   for (const file of fileMigrationMap) {
-    let originalPath = file.oldPath;
-    // Apply directory renames in reverse order (deepest first already sorted)
+    const originalPath = file.oldPath;
     for (const dir of dirMigrationMap) {
-      // Check if file is inside this renamed directory
       if (file.oldPath.startsWith(dir.oldPath + '/') && dir.actualNewPath) {
-        // Replace only the first occurrence (the directory path prefix)
         const relativePath = file.oldPath.substring(dir.oldPath.length);
         file.oldPath = dir.actualNewPath + relativePath;
       }
     }
-    // Debug logging for problematic files
     if (originalPath !== file.oldPath && config.verbose) {
       console.log(`    Updated file path: ${originalPath} → ${file.oldPath}`);
     }
-    // Update the filesMovedIntoFolders set with new paths
-    if (filesMovedIntoFolders.has(originalPath)) {
-      updatedMovedFiles.add(file.oldPath);
-    }
-  }
-  // Replace the old set with updated paths
-  filesMovedIntoFolders.clear();
-  for (const path of updatedMovedFiles) {
-    filesMovedIntoFolders.add(path);
   }
 
-  // Step 4: Rename individual files that weren't moved to attachment folders
+  // Step 4: Rename individual files
   spinner.start('Step 4/5: Renaming individual files...');
 
   for (const file of fileMigrationMap) {
-    // Skip files that were already moved into attachment folders
-    if (filesMovedIntoFolders.has(file.oldPath)) {
-      continue;
-    }
-
     // Skip files that don't need renaming
     if (!file.needsRename) {
       continue;
@@ -1251,9 +1100,7 @@ async function main() {
   }
   console.log(`   ✏️  Renamed ${chalk.cyan(stats.renamedFiles)} files`);
   console.log(`   📁 Renamed ${chalk.cyan(stats.renamedDirs)} directories`);
-  if (movedFiles > 0) {
-    console.log(`   📦 Moved ${chalk.cyan(movedFiles)} files into attachment folders`);
-  }
+
 
   if (stats.namingConflicts.length > 0) {
     console.log(chalk.yellow(`\n📝 ${stats.namingConflicts.length} naming conflicts resolved:`));
