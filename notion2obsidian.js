@@ -495,15 +495,26 @@ async function main() {
     const mdFile = file.oldPath; // Use original path (still has Notion ID)
     const mdFileBase = basename(mdFile, '.md');
     const mdFileDir = dirname(mdFile);
-    const potentialAttachmentFolder = join(mdFileDir, mdFileBase);
 
     try {
-      // Check if there's a folder with the same name as the .md file (both have Notion IDs)
-      const folderStats = await stat(potentialAttachmentFolder).catch(() => null);
+      // Find a matching attachment folder: Notion may export it as an exact match,
+      // a truncated prefix (long titles get cut), or without the Notion ID suffix.
+      let attachmentFolder = null;
+      const siblings = await readdir(mdFileDir).catch(() => []);
+      for (const sibling of siblings) {
+        const siblingPath = join(mdFileDir, sibling);
+        const siblingStats = await stat(siblingPath).catch(() => null);
+        if (!siblingStats || !siblingStats.isDirectory()) continue;
+        // Match if the md basename starts with the folder name (handles truncation and ID suffix)
+        if (mdFileBase === sibling || mdFileBase.startsWith(sibling + ' ')) {
+          attachmentFolder = siblingPath;
+          break;
+        }
+      }
 
-      if (folderStats && folderStats.isDirectory()) {
+      if (attachmentFolder) {
         // Move the .md file into its attachment folder AND rename it (remove Notion ID)
-        const newMdPath = join(potentialAttachmentFolder, file.newName);
+        const newMdPath = join(attachmentFolder, file.newName);
         await rename(mdFile, newMdPath);
         movedFiles++;
         if (file.needsRename) {
@@ -518,7 +529,7 @@ async function main() {
         filesMovedIntoFolders.add(newMdPath);
 
         // Normalize and rename image files in the attachment folder
-        const filesInFolder = await readdir(potentialAttachmentFolder);
+        const filesInFolder = await readdir(attachmentFolder);
 
         // Common image extensions
         const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico'];
@@ -537,19 +548,19 @@ async function main() {
 
             // Only rename if needed
             if (fileName !== normalizedName) {
-              const originalPath = join(potentialAttachmentFolder, fileName);
-              const normalizedPath = join(potentialAttachmentFolder, normalizedName);
+              const originalPath = join(attachmentFolder, fileName);
+              const normalizedPath = join(attachmentFolder, normalizedName);
 
               // Check if normalized path already exists
               if (await stat(normalizedPath).catch(() => false)) {
                 // Add counter to avoid collision
                 let counter = 1;
                 let altName = `${basename(normalizedName, ext)}-${counter}${ext}`;
-                while (await stat(join(potentialAttachmentFolder, altName)).catch(() => false)) {
+                while (await stat(join(attachmentFolder, altName)).catch(() => false)) {
                   counter++;
                   altName = `${basename(normalizedName, ext)}-${counter}${ext}`;
                 }
-                await rename(originalPath, join(potentialAttachmentFolder, altName));
+                await rename(originalPath, join(attachmentFolder, altName));
                 imageMap.set(fileName, altName);
               } else {
                 await rename(originalPath, normalizedPath);
